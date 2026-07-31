@@ -23,7 +23,7 @@ diff_in_means <- function(df, group_col, outcome_col, treatment_value=NULL){
   groups <- unique(df[[group_col]])
   # if more or less than 2 groups, throw error
   if(length(groups) != 2){
-    stop("Error: dataset must contain exactly 2 unique groups to use this test statistic.")
+    stop("Error: dataset must contain exactly 2 unique groups to use this test statistic")
   }
   # check which group to consider 'treatment'
   if(is.null(treatment_value)){
