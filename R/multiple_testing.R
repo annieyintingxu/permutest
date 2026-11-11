@@ -65,7 +65,9 @@ liptak <- function(pvalues){
 #' @param group_col The name of the column in df that corresponds to the group label
 #' @param outcome_cols The names of the columns in df that corresponds to the outcome variable
 #' @param alternative A string. Options are "greater", "less", or "two-sided"
-#' @param shift Value of shift to apply in one- or two-sample problem. Can be vector-valued
+#' @param shift Value of shift to apply in one- or two-sample problem: either one
+#'   value per outcome in `outcome_cols`, or a single value, which is repeated
+#'   for every outcome (with a message)
 #' @param strata_col The name of the column in df that corresponds to the strata
 #' @param test_stat Test statistic function
 #' @param perm_func Function to permute group, default is permute_group which randomly permutes group assignment
@@ -112,13 +114,25 @@ npc <- function(df, group_col, outcome_cols, alternative = "greater", shift = 0,
 
   # Get matrix of p-values
   n_out <- length(outcome_cols)
+
+  # One shift per outcome; a single value is repeated for every outcome
+  shift <- as.numeric(shift)
+  if(length(shift) == 1 && n_out > 1){
+    message("A single shift value was given; it is repeated for all ",
+            n_out, " outcomes.")
+    shift <- rep(shift, n_out)
+  } else if(length(shift) != n_out){
+    stop("'shift' must have length 1 or the same length as 'outcome_cols' (",
+         n_out, "), not ", length(shift), ".")
+  }
+
   obs_p_value <- rep(NA, n_out)
   p_value_mat <- matrix(NA, nrow = reps, ncol = n_out)
 
   for(i in 1:n_out){
     
     # Access the associated shift parameter
-    shift_i <- as.numeric(shift)[i] 
+    shift_i <- shift[i]
     
     output <- permutation_test(df = df, group_col = group_col,
                                  outcome_col = outcome_cols[i], strata_col = strata_col,
