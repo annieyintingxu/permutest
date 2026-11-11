@@ -134,7 +134,7 @@ npc <- function(df, group_col, outcome_cols, alternative = "greater", shift = 0,
       perm_set <- output$perm_indices_mat
       reps <- nrow(perm_set)
     }
-      p_value_mat[,i] <- (reps - rank(output$test_stat_dist, ties.method = "min") + 1)/(reps+1)
+      p_value_mat[,i] <- perm_partial_p_values(output$test_stat_dist, alternative)
   }
   # Get combined p-values
   combn_pvalues <- rep(NA, reps)
@@ -150,6 +150,23 @@ npc <- function(df, group_col, outcome_cols, alternative = "greater", shift = 0,
   # Return both the omnibus p-value and the permutation set used
   return(list(omnibus_p = omnibus_p,
               perm_set = perm_set))
+}
+
+# Partial p-value of each relabelling against the permutation distribution,
+# in the direction given by `alternative` (as permutation_test() does for the
+# observed statistic). Convention unchanged from the original npc():
+# #(relabellings at least as extreme, itself included) / (reps + 1).
+perm_partial_p_values <- function(stat_dist, alternative) {
+  reps <- length(stat_dist)
+  if (alternative == "greater") {
+    (reps - rank(stat_dist, ties.method = "min") + 1) / (reps + 1)
+  } else if (alternative == "less") {
+    rank(stat_dist, ties.method = "max") / (reps + 1)
+  } else if (alternative == "two-sided") {
+    (reps - rank(abs(stat_dist), ties.method = "min") + 1) / (reps + 1)
+  } else {
+    stop("Enter a valid alternative: 'two-sided', 'greater' or 'less'")
+  }
 }
 
 #' Adjust p-values for multiple testing

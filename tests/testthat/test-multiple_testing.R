@@ -38,7 +38,10 @@ test_that("npc works", {
   # and alternative is 'less', so combined p-value should be 1/(reps + 1)
   # unless one or more of the randomly drawn permutations
   # happens to be the same as the observed permutation.
-  # For seed = 92748, the p-value should be 0.1642836
+  # For seed = 92748, 1697 of the 10^4 draws are the observed labelling, so the
+  # p-value should be (1697 + 1)/(10^4 + 1) = 0.169783. (The previous expectation,
+  # 0.164, counted the 1642 fully swapped draws instead: the relabellings' partial
+  # p-values were ranked as for 'greater' whatever the alternative.)
   data <- data.frame(group = c(1, 1, 2, 2),
                      out1 = rep(0, 4),
                      out2 = rep(1, 4))
@@ -46,7 +49,7 @@ test_that("npc works", {
                 alternative = 'less',
                 shift = c(1, 1), reps = 10^4,
                 seed = 92748)
-  expect_equal(round(output$omnibus_p, 3), 0.164)
+  expect_equal(round(output$omnibus_p, 3), 0.170)
   
   # 4/24 permutations result in test stat of same size
   data <- data.frame(group = c(1, 1, 2, 2),
