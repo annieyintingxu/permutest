@@ -37,3 +37,13 @@ test_that("npc: a full-length shift vector gives no message", {
 test_that("npc: a shift vector of the wrong length is an error", {
   expect_error(run_npc(c(0.5, -1, 2)), "length")
 })
+
+test_that("npc: the default combining function is fisher", {
+  # The other npc tests use data where fisher and tippett agree, so they
+  # cannot tell which default is in use. Here the two differ.
+  cs <- shift_case()
+  p <- function(...) suppressWarnings(
+    npc(cs$df, "group", c("y1", "y2"), shift = c(0, 0), perm_set = cs$perm_set, ...))$omnibus_p
+  expect_false(isTRUE(all.equal(p(combn = "fisher"), p(combn = "tippett"))))
+  expect_equal(p(), p(combn = "fisher"))
+})

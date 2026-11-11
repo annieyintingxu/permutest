@@ -71,7 +71,7 @@ liptak <- function(pvalues){
 #' @param strata_col The name of the column in df that corresponds to the strata
 #' @param test_stat Test statistic function
 #' @param perm_func Function to permute group, default is permute_group which randomly permutes group assignment
-#' @param combn Combining function method to use, takes values 'fisher', 'tippett', or 'liptak', or a user defined function
+#' @param combn Combining function method to use, takes values 'fisher' (the default), 'tippett', or 'liptak', or a user defined function
 #' @param reps Number of iterations to use when calculating permutation p-value
 #' @param perm_set Matrix of permutations to use instead of reps iterations of perm_func
 #' @param complete_enum Boolean, whether to calculate P-value under complete enumeration of permutations
@@ -90,7 +90,7 @@ npc <- function(df, group_col, outcome_cols, alternative = "greater", shift = 0,
                 strata_col = NULL,
                 test_stat = "diff_in_means",
                 perm_func = permute_group,
-                combn = "tippett",
+                combn = "fisher",
                 reps = 10^4,
                 perm_set = NULL,
                 complete_enum = FALSE,
