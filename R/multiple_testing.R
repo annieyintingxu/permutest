@@ -76,7 +76,8 @@ liptak <- function(pvalues){
 #' @param perm_set Matrix of permutations to use instead of reps iterations of perm_func
 #' @param complete_enum Boolean, whether to calculate P-value under complete enumeration of permutations
 #' @param seed An integer seed value
-#' @return The omnibus p-value
+#' @return A list containing omnibus_p, the omnibus (global) p-value, and perm_set,
+#'   the matrix of permutations used (one row per permutation)
 #' @export
 #' @examples
 #' data <- data.frame(group = c(rep(1, 4), rep(2, 4)),
@@ -235,14 +236,13 @@ adjust_p_value <- function(pvalues, method='holm-bonferroni'){
 #' with each p-value indexed by the corresponding parameter value.
 #'
 #' @param df A data frame
-#' @param n The total number of observations
-#' @param m The number of observations in the treatment group (Group 1)
 #' @param group_col The name of the column in df that corresponds to the group label
 #' @param outcome_cols The names of the columns in df that corresponds to the outcome variable
-#' @param alternative A string. Options are "greater", "less", or "two-sided"
-#' @param param_values The matrix containing the parameter values to test
-#' @param test_stat Test statistic function
-#' @param combn Combining function method to use, takes values 'fisher', 'tippett', or 'liptak', or a user defined function
+#' @param alternative A string. Options are "greater" (the default), "less", or "two-sided"
+#' @param param_values The matrix containing the parameter values to test: one row per
+#'   parameter value, one column per outcome in `outcome_cols`
+#' @param test_stat Test statistic function, default is "diff_in_means"
+#' @param combn Combining function method to use, takes values 'fisher' (the default), 'tippett', or 'liptak', or a user defined function
 #' @param strata_col The name of the column in df that corresponds to the strata
 #' @param reps Number of iterations to use when calculating permutation p-value
 #' @param perm_set Matrix of permutations to use instead of reps iterations of perm_func
@@ -286,9 +286,9 @@ adjust_p_value <- function(pvalues, method='holm-bonferroni'){
 #'                     seed = 827202601)
 
 npc_many <- function(df,
-                     group_col, outcome_cols, alternative,
+                     group_col, outcome_cols, alternative = "greater",
                      param_values,
-                     test_stat, combn,
+                     test_stat = "diff_in_means", combn = "fisher",
                      strata_col = NULL,
                      reps = NULL, perm_set = NULL, 
                      perm_func = permute_group, 
