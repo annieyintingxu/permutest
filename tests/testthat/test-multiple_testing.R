@@ -34,19 +34,28 @@ test_that("npc works", {
                 shift = c(2, 5), reps = 10^4)
   expect_equal(round(output$omnibus_p, 3), 1)
   
-  # all permutations should give larger test stat than the observed,
-  # and alternative is 'less', so combined p-value should be 1/(reps + 1)
-  # unless one or more of the randomly drawn permutations
-  # happens to be the same as the observed permutation.
-  # For seed = 92748, the p-value should be 0.1642836
+  # Hand calculation. Each outcome is constant, so with shift = 1 a relabelling's
+  # difference in means is (number of treated units it moves to control) * 1:
+  # 0 for the observed labelling, 1 for a one-unit swap, 2 for the full swap.
+  # Only draws identical to the observed labelling (k of them) are as small as
+  # the observed, so with alternative = 'less':
+  #   observed partial p-values      = (k + 1)/(reps + 1) for both outcomes
+  #   identical draws' partial p      = k/(reps + 1)  -> combined value above the observed
+  #   all other draws' partial p     >= (k + 1)/(reps + 1) -> combined value below,
+  #                                     strictly when there are at least 2 one-swap draws
+  # Global p-value = (k + 1)/(reps + 1). With no identical draws this is 1/(reps + 1).
+  # k is read from the returned permutation set, so the check holds for any seed.
   data <- data.frame(group = c(1, 1, 2, 2),
                      out1 = rep(0, 4),
                      out2 = rep(1, 4))
+  reps <- 10^4
   output <- npc(df = data, group_col = "group", outcome_cols = c("out1", "out2"), 
                 alternative = 'less',
-                shift = c(1, 1), reps = 10^4,
+                shift = c(1, 1), reps = reps,
                 seed = 92748)
-  expect_equal(round(output$omnibus_p, 3), 0.164)
+  k <- sum(apply(output$perm_set, 1, function(g) all(g == data$group)))
+  expect_gt(k, 0)   # the formula is checked away from its k = 0 edge case
+  expect_equal(output$omnibus_p, (k + 1)/(reps + 1))
   
   # 4/24 permutations result in test stat of same size
   data <- data.frame(group = c(1, 1, 2, 2),

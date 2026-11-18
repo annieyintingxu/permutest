@@ -8,12 +8,13 @@ npc(
   df,
   group_col,
   outcome_cols,
+  alternative = "greater",
+  shift = 0,
   strata_col = NULL,
   test_stat = "diff_in_means",
   perm_func = permute_group,
   combn = "fisher",
-  shift = 0,
-  reps = 10000,
+  reps = 10^4,
   perm_set = NULL,
   complete_enum = FALSE,
   seed = NULL
@@ -26,15 +27,19 @@ npc(
 
 \item{outcome_cols}{The names of the columns in df that corresponds to the outcome variable}
 
+\item{alternative}{A string. Options are "greater", "less", or "two-sided"}
+
+\item{shift}{Value of shift to apply in one- or two-sample problem: either one
+value per outcome in \code{outcome_cols}, or a single value, which is repeated
+for every outcome (with a message)}
+
 \item{strata_col}{The name of the column in df that corresponds to the strata}
 
 \item{test_stat}{Test statistic function}
 
 \item{perm_func}{Function to permute group, default is permute_group which randomly permutes group assignment}
 
-\item{combn}{Combining function method to use, takes values 'fisher', 'tippett', or 'liptak', or a user defined function}
-
-\item{shift}{Value of shift to apply in one- or two-sample problem}
+\item{combn}{Combining function method to use, takes values 'fisher' (the default), 'tippett', or 'liptak', or a user defined function}
 
 \item{reps}{Number of iterations to use when calculating permutation p-value}
 
@@ -45,7 +50,8 @@ npc(
 \item{seed}{An integer seed value}
 }
 \value{
-The omnibus p-value
+A list containing omnibus_p, the omnibus (global) p-value, and perm_set,
+the matrix of permutations used (one row per permutation)
 }
 \description{
 This function takes a data frame and group and outcome column names as input
@@ -55,8 +61,8 @@ and returns the nonparametric combination of tests (NPC) omnibus p-value
 data <- data.frame(group = c(rep(1, 4), rep(2, 4)),
 out1 = c(0, 1, 0, 0, 1, 1, 1, 0),
 out2 = rep(1, 8))
-output <- npc(df = data, group_col = "group",
+output <- npc(df = data, group_col = "group", alternative = "greater",
               outcome_cols = c("out1", "out2"), perm_func = permute_group,
-              combn = "fisher", reps = 10^4, seed=42)
+              combn = "tippett", shift = c(0,0), reps = 10^4, seed = 42)
 
 }
