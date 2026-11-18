@@ -1,0 +1,358 @@
+---
+title: "Getting started with permutest"
+output: rmarkdown::pdf_document
+vignette: >
+  %\VignetteIndexEntry{Getting started with permutest}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", warning = FALSE)
+library(permutest)
+```
+
+## Overview
+
+`permutest` runs permutation (randomization) tests for any test statistic and
+any randomization scheme, and builds confidence intervals by inverting those
+tests, following Glazer and Stark (2024). This vignette describes the development
+version, which adds `npc_many()` and revises `npc()`: a per-outcome shift (or one
+value used for every outcome) and an `alternative` argument that applies to every
+outcome.
+
+Everything is built around one generic function, `permutation_test()`. It takes
+a data frame and two plug-ins:
+
+* `test_stat`: how to summarise the data (difference in means, a t statistic,
+  or any function you write);
+* `perm_func`: how to re-randomise the group labels (shuffle them, shuffle
+  within strata, flip signs), or a matrix of relabellings supplied as
+  `perm_set`.
+
+The other functions are layers on top of it.
+
+| Function | What it does |
+|---|---|
+| `two_sample()`, `one_sample()` | Shortcuts for the difference in means and the one-sample mean |
+| `permutation_test_ci()` | Confidence interval by inverting the test |
+| `npc()` | Combines tests on several outcomes (nonparametric combination) |
+| `npc_many()` | `npc()` over a grid of shifts, with one shared set of relabellings |
+| `tippett()`, `fisher()`, `liptak()` | Combining functions used by `npc()` |
+| `adjust_p_value()` | Holm-Bonferroni, Bonferroni and Benjamini-Hochberg adjustments |
+
+## A first test
+
+The data are two samples, `x` (treatment) and `y` (control).
+
+```{r data}
+x <- c(35.3, 35.9, 37.2, 33.0, 31.9, 33.7, 36.0, 35.0,
+       33.3, 33.6, 37.9, 35.6, 29.0, 33.7, 35.7)
+y <- c(32.5, 34.0, 34.4, 31.8, 35.0, 34.6, 33.5, 33.6,
+       31.5, 33.8, 34.6)
+
+two_sample(x, y, alternative = "greater", reps = 10^4, seed = 42)
+```
+
+The result is a p-value for the null hypothesis that treatment had no effect,
+against the alternative that it increased the outcome. `alternative` can be
+`"greater"`, `"less"` or `"two-sided"`.
+
+## The generic test
+
+`two_sample()` wraps `permutation_test()`, which takes a data frame and the
+names of its columns.
+
+```{r generic}
+df <- data.frame(group   = c(rep(1, length(x)), rep(0, length(y))),
+                 outcome = c(x, y))
+
+out <- permutation_test(df, group_col = "group", outcome_col = "outcome",
+                        test_stat = "diff_in_means",
+                        perm_func = permute_group,
+                        alternative = "greater",
+                        shift = 0,
+                        reps = 10^4,
+                        return_test_dist = TRUE,
+                        return_perm_dist = TRUE,
+                        seed = 42)
+out$p_value
+```
+
+Three conventions to know:
+
+* **The treatment group is the first value of `group_col` to appear in the
+  data.** Here that is `1`, because the treated rows come first. If the control
+  rows came first the sign of the statistic would flip. The function warns
+  about the choice ("... being used as value for treatment"); warnings are
+  switched off in this vignette.
+* **The p-value counts the observed labelling.** For sampled permutations it is
+  (number of permuted statistics at least as large as the observed one, plus
+  one) divided by (`reps` plus one). With `complete_enum = TRUE` it is the plain
+  fraction.
+* **The output** is a list: `p_value`, `test_stat_dist` (the permutation
+  distribution, if requested) and `perm_indices_mat` (one relabelling per row,
+  if requested).
+
+```{r dist, fig.width = 6, fig.height = 3.5}
+hist(out$test_stat_dist, breaks = 40, main = "Permutation distribution",
+     xlab = "Difference in means")
+abline(v = diff_in_means(df, "group", "outcome", treatment_value = 1),
+       col = "red", lwd = 2)
+```
+
+### Testing a non-zero effect
+
+`shift` tests the hypothesis that treatment added a constant to every treated
+unit. Units that change group under a relabelling are adjusted by the shift.
+
+```{r shift}
+permutation_test(df, "group", "outcome", alternative = "two-sided",
+                 shift = 2, reps = 10^4, seed = 42)$p_value
+```
+
+The set of shifts that are not rejected at level $\alpha$ is a confidence set.
+`permutation_test_ci()` computes it for one outcome, as shown below.
+
+## Plugging in a test statistic
+
+`test_stat` is either a string (`"diff_in_means"`, `"diff_in_medians"`,
+`"mean"`) or a function of `(df, group_col, outcome_col)` that returns one
+number. Larger values should mean more evidence for the "greater" alternative.
+
+```{r custom-stat}
+trimmed_diff <- function(df, group_col, outcome_col) {
+  treated <- df[[group_col]] == 1       # fix the treatment label explicitly
+  mean(df[[outcome_col]][treated], trim = 0.1) -
+    mean(df[[outcome_col]][!treated], trim = 0.1)
+}
+
+permutation_test(df, "group", "outcome", test_stat = trimmed_diff,
+                 alternative = "two-sided", reps = 5000, seed = 1)$p_value
+```
+
+Write the treatment label into the function, as above. A statistic that works
+out the treatment group from the data it is given can change orientation on a
+permuted data frame.
+
+## Plugging in a permutation scheme
+
+`perm_func` takes `(df, group_col, strata_col, seed)` and returns the data frame
+with the group column rearranged.
+
+```{r strata}
+df$stratum <- c(rep(1:2, length.out = length(x)),
+                rep(1:2, length.out = length(y)))
+
+permutation_test(df, "group", "outcome", strata_col = "stratum",
+                 perm_func = strat_permute_group,
+                 alternative = "greater", reps = 5000, seed = 1)$p_value
+```
+
+`permute_sign` flips signs for the one-sample problem, and `one_sample()` uses
+it.
+
+### Reusing relabellings, and complete enumeration
+
+You can pass your own matrix of relabellings in `perm_set`, one row per
+relabelling. Reusing one set across many tests is the idea behind the fast
+confidence-interval algorithm: coverage depends only on the test at the true
+value, so one Monte Carlo sample serves every hypothesised shift.
+
+When the number of assignments is small, you can enumerate all of them and ask
+for the exact p-value.
+
+```{r enum}
+small <- data.frame(group   = c(1, 1, 1, 0, 0, 0),
+                    outcome = c(5.1, 6.3, 4.8, 3.9, 4.4, 5.0))
+
+all_assignments <- t(combn(6, 3, function(i) {
+  g <- rep(0, 6); g[i] <- 1; g
+}))
+dim(all_assignments)
+
+permutation_test(small, "group", "outcome", alternative = "greater",
+                 perm_set = all_assignments, complete_enum = TRUE)$p_value
+```
+
+## Confidence intervals for one outcome
+
+`permutation_test_ci()` inverts the two-sided test by bisection and returns the
+observed statistic and the interval.
+
+```{r ci}
+ci <- permutation_test_ci(df, "group", "outcome",
+                          test_stat = "diff_in_means",
+                          perm_func = permute_group,
+                          cl = 0.95, e = 0.01, reps = 10^4, seed = 42)
+ci$obs_diff
+ci$ci
+```
+
+* `cl` is the confidence level; `e` is how close the bisection has to get to
+  each endpoint, so a smaller `e` takes more steps.
+* The relabellings are generated once and reused at every shift.
+* For `"diff_in_means"` (and `"mean"` in the one-sample problem) the statistic
+  at a new shift is computed from the one at shift 0, using the number of
+  treated units each relabelling moves to control. Other statistics re-run
+  `permutation_test()` at every shift, which is much slower.
+* Leave `upper_bracket` and `lower_bracket` as `NULL`. The function checks that
+  its starting brackets contain the endpoints and stops with an error if they
+  do not.
+* The interval is for a constant shift. It remains valid for the largest or
+  smallest unit-level effect when effects vary (Caughey et al., 2023), but it
+  is then not an interval for the average effect.
+
+## Several outcomes: nonparametric combination
+
+With more than one outcome, `npc()` tests each outcome separately using the same
+relabellings, turns the results into p-values for every relabelling, and
+combines them. The global p-value is the fraction of relabellings whose combined
+value is at least the observed one.
+
+```{r npc-data}
+set.seed(2026)
+z1 <- rnorm(20)
+z2 <- 0.5 * z1 + sqrt(0.75) * rnorm(20)
+dat <- data.frame(group = rep(c(1, 0), each = 10),
+                  y1 = z1 + rep(c(0.8, 0), each = 10),
+                  y2 = z2 + rep(c(0.5, 0), each = 10))
+```
+
+`shift` takes one value per outcome, or a single value that is used for every
+outcome (with a message saying so). The default, `shift = 0`, tests no effect on
+any outcome. A `shift` of any other length is an error.
+
+```{r npc}
+res <- npc(dat, group_col = "group", outcome_cols = c("y1", "y2"),
+           alternative = "greater", shift = c(0, 0),
+           combn = "tippett", reps = 10^3, seed = 1)
+res$omnibus_p
+dim(res$perm_set)
+```
+
+`npc()` returns a list with the global p-value (`omnibus_p`) and the
+relabellings it used (`perm_set`). The default combining function is Fisher's.
+The built-in combining functions are:
+
+| `combn` | Value for component p-values $p_j$ | Large means evidence against the null |
+|---|---|---|
+| `"tippett"` | $\max_j (1 - p_j)$ | yes |
+| `"fisher"` | $-2 \sum_j \log p_j$ | yes |
+| `"liptak"` | $\sum_j \Phi^{-1}(1 - p_j)$ | yes |
+
+Passing `perm_set = res$perm_set` makes the next call use the same relabellings,
+so the combining functions can be compared on identical draws.
+
+```{r npc-compare}
+sapply(c("tippett", "fisher", "liptak"), function(cb)
+  npc(dat, "group", c("y1", "y2"), alternative = "greater",
+      shift = c(0, 0), combn = cb, perm_set = res$perm_set)$omnibus_p)
+```
+
+`combn` also accepts your own function of a vector of p-values. It must return a
+number that is large when the evidence against the null is strong, so a sum of
+p-values needs its sign reversed.
+
+```{r npc-custom}
+edgington <- function(p) -sum(p)
+npc(dat, "group", c("y1", "y2"), alternative = "greater", shift = c(0, 0),
+    combn = edgington, perm_set = res$perm_set)$omnibus_p
+```
+
+A shift other than zero tests a specific pair of effects:
+
+```{r npc-shift}
+npc(dat, "group", c("y1", "y2"), alternative = "greater",
+    shift = c(0.8, 0.5), combn = "tippett",
+    perm_set = res$perm_set)$omnibus_p
+```
+
+### How the global p-value is counted
+
+For each outcome, the observed data and every relabelling get a partial p-value
+from the permutation distribution, in the direction set by `alternative`. The
+combining function turns each one's partial p-values into a single value. The
+global p-value is the share of the `reps + 1` labellings (the observed one and
+each relabelling) whose combined value is at least the observed one.
+
+## Confidence regions for two outcomes
+
+A confidence region for the pair of effects is the set of shifts
+$(\eta_1, \eta_2)$ that the global test does not reject at level $\alpha$.
+`npc_many()` evaluates the global p-value at each row of a grid of shifts, using
+one set of relabellings throughout.
+
+```{r npc-many}
+grid <- expand.grid(eta1 = seq(-1.5, 2, length.out = 9),
+                    eta2 = seq(-1.5, 2, length.out = 9))
+
+many <- npc_many(df = dat, group_col = "group",
+                 outcome_cols = c("y1", "y2"),
+                 alternative = "greater",
+                 param_values = grid,
+                 test_stat = "diff_in_means",
+                 combn = "tippett",
+                 perm_set = res$perm_set)
+
+head(many$global_p_values)
+```
+
+The result is a list. `global_p_values` is a matrix with columns `param1`,
+`param2` and `global_p_value`, one row per grid point. `perm_set` is the set of
+relabellings used. Each grid point is a separate call to `npc()`, so cost grows
+with the grid size times the number of relabellings. Start with a coarse grid
+and a modest `reps`.
+
+```{r region, fig.width = 5, fig.height = 4.5}
+p <- matrix(many$global_p_values[, "global_p_value"], nrow = 9)
+image(unique(grid$eta1), unique(grid$eta2), 1 * (p > 0.05),
+      col = c("grey85", "steelblue"),
+      xlab = expression(eta[1]), ylab = expression(eta[2]),
+      main = "Shifts not rejected at level 0.05")
+points(mean(dat$y1[dat$group == 1]) - mean(dat$y1[dat$group == 0]),
+       mean(dat$y2[dat$group == 1]) - mean(dat$y2[dat$group == 0]),
+       pch = 4, lwd = 2)
+```
+
+Three points to keep in mind when reading a region like this:
+
+* **The global p-value is not monotone in the shifts.** Unlike the one-outcome
+  case, the accepted region can have indents and narrow strips along its edges.
+* **A grid is an approximation.** The p-value is a step function, so a grid can
+  step over a change, and a feature narrower than the grid spacing can be
+  missed. The region is not guaranteed to be conservative.
+* **The alternative is one-sided here.** With `alternative = "greater"` the
+  region has lower limits only and runs off the top and right of the plot.
+  `"less"` gives upper limits, and `"two-sided"` gives a bounded region.
+
+## Adjusting for multiple testing
+
+```{r adjust}
+pvals <- c(0.01, 0.04, 0.03, 0.20)
+adjust_p_value(pvals, method = "holm-bonferroni")
+adjust_p_value(pvals, method = "bonferroni")
+adjust_p_value(pvals, method = "benjamini-hochberg")
+```
+
+## Practical notes
+
+* **Choosing `reps`.** The p-value resolution is about $1/(\text{reps}+1)$. Use at
+  least $10^4$ for a single test and more near the threshold. When the number of
+  distinct assignments is small, enumerate them and, in `permutation_test()`, set
+  `complete_enum = TRUE` for exact p-values.
+* **Reproducibility.** Set `seed`, or fix the relabellings once with `perm_set`.
+* **Validity.** The tests are valid for the randomization actually used, so
+  `perm_func` has to match the assignment mechanism.
+
+## References
+
+Glazer, A. K. and Stark, P. B. (2024). Fast conservative Monte Carlo confidence
+sets. arXiv:2405.05238. Published in the *Journal of Computational and
+Graphical Statistics*, 2026.
+
+Pesarin, F. and Salmaso, L. *Permutation Tests for Complex Data*. Wiley.
+
+Caughey, D., Dafoe, A., Li, X. and Miratrix, L. (2023). Randomisation
+inference beyond the sharp null. *Journal of the Royal Statistical Society,
+Series B*, 85, 1471-1491.
