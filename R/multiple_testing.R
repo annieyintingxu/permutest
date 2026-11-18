@@ -65,16 +65,19 @@ liptak <- function(pvalues){
 #' @param group_col The name of the column in df that corresponds to the group label
 #' @param outcome_cols The names of the columns in df that corresponds to the outcome variable
 #' @param alternative A string. Options are "greater", "less", or "two-sided"
-#' @param shift Value of shift to apply in one- or two-sample problem. Can be vector-valued
+#' @param shift Value of shift to apply in one- or two-sample problem: either one
+#'   value per outcome in `outcome_cols`, or a single value, which is repeated
+#'   for every outcome (with a message)
 #' @param strata_col The name of the column in df that corresponds to the strata
 #' @param test_stat Test statistic function
 #' @param perm_func Function to permute group, default is permute_group which randomly permutes group assignment
-#' @param combn Combining function method to use, takes values 'fisher', 'tippett', or 'liptak', or a user defined function
+#' @param combn Combining function method to use, takes values 'fisher' (the default), 'tippett', or 'liptak', or a user defined function
 #' @param reps Number of iterations to use when calculating permutation p-value
 #' @param perm_set Matrix of permutations to use instead of reps iterations of perm_func
 #' @param complete_enum Boolean, whether to calculate P-value under complete enumeration of permutations
 #' @param seed An integer seed value
-#' @return The omnibus p-value
+#' @return A list containing omnibus_p, the omnibus (global) p-value, and perm_set,
+#'   the matrix of permutations used (one row per permutation)
 #' @export
 #' @examples
 #' data <- data.frame(group = c(rep(1, 4), rep(2, 4)),
@@ -88,7 +91,7 @@ npc <- function(df, group_col, outcome_cols, alternative = "greater", shift = 0,
                 strata_col = NULL,
                 test_stat = "diff_in_means",
                 perm_func = permute_group,
-                combn = "tippett",
+                combn = "fisher",
                 reps = 10^4,
                 perm_set = NULL,
                 complete_enum = FALSE,
@@ -112,13 +115,25 @@ npc <- function(df, group_col, outcome_cols, alternative = "greater", shift = 0,
 
   # Get matrix of p-values
   n_out <- length(outcome_cols)
+
+  # One shift per outcome; a single value is repeated for every outcome
+  shift <- as.numeric(shift)
+  if(length(shift) == 1 && n_out > 1){
+    message("A single shift value was given; it is repeated for all ",
+            n_out, " outcomes.")
+    shift <- rep(shift, n_out)
+  } else if(length(shift) != n_out){
+    stop("'shift' must have length 1 or the same length as 'outcome_cols' (",
+         n_out, "), not ", length(shift), ".")
+  }
+
   obs_p_value <- rep(NA, n_out)
   p_value_mat <- matrix(NA, nrow = reps, ncol = n_out)
 
   for(i in 1:n_out){
     
     # Access the associated shift parameter
-    shift_i <- as.numeric(shift)[i] 
+    shift_i <- shift[i]
     
     output <- permutation_test(df = df, group_col = group_col,
                                  outcome_col = outcome_cols[i], strata_col = strata_col,
@@ -134,7 +149,7 @@ npc <- function(df, group_col, outcome_cols, alternative = "greater", shift = 0,
       perm_set <- output$perm_indices_mat
       reps <- nrow(perm_set)
     }
-      p_value_mat[,i] <- (reps - rank(output$test_stat_dist, ties.method = "min") + 1)/(reps+1)
+      p_value_mat[,i] <- perm_partial_p_values(output$test_stat_dist, alternative)
   }
   # Get combined p-values
   combn_pvalues <- rep(NA, reps)
@@ -150,6 +165,23 @@ npc <- function(df, group_col, outcome_cols, alternative = "greater", shift = 0,
   # Return both the omnibus p-value and the permutation set used
   return(list(omnibus_p = omnibus_p,
               perm_set = perm_set))
+}
+
+# Partial p-value of each relabelling against the permutation distribution,
+# in the direction given by `alternative` (as permutation_test() does for the
+# observed statistic). Convention unchanged from the original npc():
+# #(relabellings at least as extreme, itself included) / (reps + 1).
+perm_partial_p_values <- function(stat_dist, alternative) {
+  reps <- length(stat_dist)
+  if (alternative == "greater") {
+    (reps - rank(stat_dist, ties.method = "min") + 1) / (reps + 1)
+  } else if (alternative == "less") {
+    rank(stat_dist, ties.method = "max") / (reps + 1)
+  } else if (alternative == "two-sided") {
+    (reps - rank(abs(stat_dist), ties.method = "min") + 1) / (reps + 1)
+  } else {
+    stop("Enter a valid alternative: 'two-sided', 'greater' or 'less'")
+  }
 }
 
 #' Adjust p-values for multiple testing
@@ -204,14 +236,13 @@ adjust_p_value <- function(pvalues, method='holm-bonferroni'){
 #' with each p-value indexed by the corresponding parameter value.
 #'
 #' @param df A data frame
-#' @param n The total number of observations
-#' @param m The number of observations in the treatment group (Group 1)
 #' @param group_col The name of the column in df that corresponds to the group label
 #' @param outcome_cols The names of the columns in df that corresponds to the outcome variable
-#' @param alternative A string. Options are "greater", "less", or "two-sided"
-#' @param param_values The matrix containing the parameter values to test
-#' @param test_stat Test statistic function
-#' @param combn Combining function method to use, takes values 'fisher', 'tippett', or 'liptak', or a user defined function
+#' @param alternative A string. Options are "greater" (the default), "less", or "two-sided"
+#' @param param_values The matrix containing the parameter values to test: one row per
+#'   parameter value, one column per outcome in `outcome_cols`
+#' @param test_stat Test statistic function, default is "diff_in_means"
+#' @param combn Combining function method to use, takes values 'fisher' (the default), 'tippett', or 'liptak', or a user defined function
 #' @param strata_col The name of the column in df that corresponds to the strata
 #' @param reps Number of iterations to use when calculating permutation p-value
 #' @param perm_set Matrix of permutations to use instead of reps iterations of perm_func
@@ -235,6 +266,7 @@ adjust_p_value <- function(pvalues, method='holm-bonferroni'){
 #' data$group <- c(rep(1, m), rep(2, k))
 #' colnames(data) <- c('y1', 'y2', 'group')
 #' 
+#' \donttest{
 #' # Parameter grid
 #' L1 <- 15 + 1
 #' L2 <- 10 + 1
@@ -253,11 +285,12 @@ adjust_p_value <- function(pvalues, method='holm-bonferroni'){
 #'                     combn = 'tippett',
 #'                     reps = B,
 #'                     seed = 827202601)
+#' }
 
 npc_many <- function(df,
-                     group_col, outcome_cols, alternative,
+                     group_col, outcome_cols, alternative = "greater",
                      param_values,
-                     test_stat, combn,
+                     test_stat = "diff_in_means", combn = "fisher",
                      strata_col = NULL,
                      reps = NULL, perm_set = NULL, 
                      perm_func = permute_group, 
