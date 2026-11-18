@@ -72,6 +72,7 @@ data <- data.frame(rbind(group1, group2))
 data$group <- c(rep(1, m), rep(2, k))
 colnames(data) <- c('y1', 'y2', 'group')
 
+\donttest{
 # Parameter grid
 L1 <- 15 + 1
 L2 <- 10 + 1
@@ -90,4 +91,5 @@ output <- npc_many(df = data,
                     combn = 'tippett',
                     reps = B,
                     seed = 827202601)
+}
 }

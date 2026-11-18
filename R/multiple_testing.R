@@ -266,6 +266,7 @@ adjust_p_value <- function(pvalues, method='holm-bonferroni'){
 #' data$group <- c(rep(1, m), rep(2, k))
 #' colnames(data) <- c('y1', 'y2', 'group')
 #' 
+#' \donttest{
 #' # Parameter grid
 #' L1 <- 15 + 1
 #' L2 <- 10 + 1
@@ -284,6 +285,7 @@ adjust_p_value <- function(pvalues, method='holm-bonferroni'){
 #'                     combn = 'tippett',
 #'                     reps = B,
 #'                     seed = 827202601)
+#' }
 
 npc_many <- function(df,
                      group_col, outcome_cols, alternative = "greater",
